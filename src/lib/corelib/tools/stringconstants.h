@@ -69,6 +69,7 @@ public:
     QBS_STRING_CONSTANT(auxiliaryInputsFromDependenciesProperty, "auxiliaryInputsFromDependencies")
     QBS_STRING_CONSTANT(baseNameProperty, "baseName")
     QBS_STRING_CONSTANT(baseProfileProperty, "baseProfile")
+    QBS_STRING_CONSTANT(generatorKey, "generator")
     QBS_STRING_CONSTANT(buildDirectoryProperty, "buildDirectory")
     QBS_STRING_CONSTANT(buildDirectoryKey, "build-directory")
     QBS_STRING_CONSTANT(builtByDefaultProperty, "builtByDefault")

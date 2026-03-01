@@ -39,6 +39,7 @@
 
 #include "session.h"
 
+#include "generators/generator.h"
 #include "lspserver.h"
 #include "sessionpacket.h"
 #include "sessionpacketreader.h"
@@ -48,6 +49,7 @@
 #include <api/projectdata.h>
 #include <api/runenvironment.h>
 #include <logging/ilogsink.h>
+#include <logging/logger.h>
 #include <tools/buildoptions.h>
 #include <tools/cleanoptions.h>
 #include <tools/error.h>
@@ -61,6 +63,7 @@
 #include <tools/setupprojectparameters.h>
 #include <tools/stlutils.h>
 #include <tools/stringconstants.h>
+#include <tools/projectgeneratormanager.h>
 
 #include <QtCore/qcoreapplication.h>
 #include <QtCore/qdir.h>
@@ -148,6 +151,7 @@ private:
 
     void sendPacket(const QJsonObject &message);
     void setupProject(const QJsonObject &request);
+    void generate(const QJsonObject &request);
     void buildProject(const QJsonObject &request);
     void cleanProject(const QJsonObject &request);
     void installProject(const QJsonObject &request);
@@ -232,6 +236,8 @@ Session::Session()
         const QString type = packet.value(StringConstants::type()).toString();
         if (type == QLatin1String("resolve-project"))
             setupProject(packet);
+        else if(type == QLatin1String("generate"))
+            generate(packet);
         else if (type == QLatin1String("build-project"))
             buildProject(packet);
         else if (type == QLatin1String("clean-project"))
@@ -329,6 +335,47 @@ void Session::setupProject(const QJsonObject &request)
         m_currentJob->deleteLater();
         m_currentJob = nullptr;
     });
+}
+
+namespace {
+void flattenVariantMap(
+    const QVariant &input, const QString &prefix, QMap<QString, QVariant> &output)
+{
+    if (input.userType() == QMetaType::Type::QVariantMap) {
+        QVariantMap map = input.toMap();
+        for (auto it = map.begin(); it != map.end(); ++it) {
+            QString newPrefix = prefix.isEmpty() ? it.key() : prefix + "." + it.key();
+            flattenVariantMap(it.value(), newPrefix, output);
+        }
+    } else {
+        output[prefix] = input.toString();
+    }
+}
+} // namespace
+
+void Session::generate(const QJsonObject &request)
+{
+    constexpr const char * const kProjectGenerated = "project-generated";
+    const QString generatorName = request.value(StringConstants::generatorKey()).toString();
+    const auto generator = ProjectGeneratorManager::instance()->findGenerator(generatorName);
+    if (!generator) {
+        sendErrorReply(kProjectGenerated, tr("Invalid generator."));
+    }
+
+    QVariantMap flattend;
+    flattenVariantMap(m_project.projectConfiguration(), {}, flattend);
+    Internal::Logger logger(&m_logSink);
+    const ErrorInfo error = generator->generate(
+        QList<Project>{m_project},
+        QList<QVariantMap>{flattend},
+        InstallOptions{},
+        m_settings->baseDirectory(),
+        logger);
+    if (error.hasError()) {
+        sendErrorReply(kProjectGenerated, tr("Generate failed: %1").arg(error.toString()));
+    } else {
+        sendPacket(QJsonObject{{StringConstants::type(), QLatin1String(kProjectGenerated)}});
+    }
 }
 
 void Session::buildProject(const QJsonObject &request)
